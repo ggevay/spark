@@ -2103,22 +2103,14 @@ private[spark] class DAGScheduler(
       return rddPrefs.map(TaskLocation(_))
     }
 
-    // If the RDD has narrow dependencies, pick the first partition of the first narrow dependency
-    // that has any placement preferences. Ideally we would choose based on transfer sizes,
-    // but this will do for now.
-    rdd.dependencies.foreach {
+    // If the RDD has narrow dependencies, union all the preferences of all these narrow
+    // dependencies. It's important to consider all narrow dependencies instead of picking just
+    // one, so that the scheduler has more options to choose from.
+    rdd.dependencies.flatMap {
       case n: NarrowDependency[_] =>
-        for (inPart <- n.getParents(partition)) {
-          val locs = getPreferredLocsInternal(n.rdd, inPart, visited)
-          if (locs != Nil) {
-            return locs
-          }
-        }
-
-      case _ =>
-    }
-
-    Nil
+        n.getParents(partition).flatMap(inPart => getPreferredLocsInternal(n.rdd, inPart, visited))
+      case _ => Seq()
+    }.distinct
   }
 
   /** Mark a map stage job as finished with the given output stats, and report to its listener. */
